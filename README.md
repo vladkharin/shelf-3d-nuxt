@@ -1,75 +1,14 @@
-# Nuxt Minimal Starter
+# FORM / Shelf — DomCraft experiment
 
-Look at the [Nuxt documentation](https://nuxt.com/docs/getting-started/introduction) to learn more.
+Browser-based furniture configurator with a real open-compartment 3D model.
+Dimensions, row and column counts and finishes update the model. Orbit with
+the pointer and zoom with the wheel. Export a PNG view or JSON configuration;
+shared links restore bounded, validated settings. No furniture orders or
+payments are processed.
 
-## Setup
+Run `npm ci` and `npm run generate`. Publish `.output/public/` as static files.
+`npm run dev` starts the development server. The renderer uses demand rendering
+and disposes geometry, materials, controls and resize observers on unmount.
+WebGL-unavailable visitors can still edit and download configuration parameters.
 
-Make sure to install dependencies:
-
-```bash
-# npm
-npm install
-
-# pnpm
-pnpm install
-
-# yarn
-yarn install
-
-# bun
-bun install
-```
-
-## Development Server
-
-Start the development server on `http://localhost:3000`:
-
-```bash
-# npm
-npm run dev
-
-# pnpm
-pnpm dev
-
-# yarn
-yarn dev
-
-# bun
-bun run dev
-```
-
-## Production
-
-Build the application for production:
-
-```bash
-# npm
-npm run build
-
-# pnpm
-pnpm build
-
-# yarn
-yarn build
-
-# bun
-bun run build
-```
-
-Locally preview production build:
-
-```bash
-# npm
-npm run preview
-
-# pnpm
-pnpm preview
-
-# yarn
-yarn preview
-
-# bun
-bun run preview
-```
-
-Check out the [deployment documentation](https://nuxt.com/docs/getting-started/deployment) for more information.
+Fonts: Manrope under the SIL Open Font License in public/fonts/.

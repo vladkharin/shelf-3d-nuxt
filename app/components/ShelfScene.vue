@@ -1,151 +1,79 @@
 <template>
-  <div ref="mountRef" class="scene-container"></div>
+  <div ref="mount" class="scene" role="img" aria-label="Трёхмерная модель стеллажа. Перетаскивайте для вращения, прокручивайте для приближения.">
+    <div v-if="failed" class="scene-fallback"><strong>3D-просмотр недоступен</strong><p>Попробуйте браузер с поддержкой WebGL. Настройки и скачивание конфигурации остаются доступны.</p></div>
+  </div>
 </template>
-
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref, watch } from "vue";
-import * as THREE from "three";
-
-defineOptions({
-  ssr: false,
-});
-
-const props = defineProps<{
-  width: number;
-  height: number;
-  depth: number;
-  rows: number;
-  cols: number;
-  color: string;
-}>();
-
-const mountRef = ref<HTMLDivElement | null>(null);
-
-let scene: THREE.Scene;
-let camera: THREE.PerspectiveCamera;
-let renderer: THREE.WebGLRenderer;
-let shelf: THREE.Group;
-
-function createShelf() {
-  if (shelf) scene.remove(shelf);
-
-  const group = new THREE.Group();
-
-  // Корпус
-  const boxGeo = new THREE.BoxGeometry(props.width, props.height, props.depth);
-  const boxMat = new THREE.MeshStandardMaterial({ color: props.color, metalness: 0.1, roughness: 0.7 });
-  const box = new THREE.Mesh(boxGeo, boxMat);
-  group.add(box);
-
-  // Горизонтальные полки
-  const shelfThickness = 0.02;
-  for (let i = 1; i < props.rows; i++) {
-    const y = -props.height / 2 + (i * props.height) / props.rows;
-    const shelfGeo = new THREE.BoxGeometry(props.width, shelfThickness, props.depth);
-    const shelfMat = new THREE.MeshStandardMaterial({ color: "#e0e0e0" });
-    const shelf = new THREE.Mesh(shelfGeo, shelfMat);
-    shelf.position.y = y;
-    group.add(shelf);
-  }
-
-  // Вертикальные перегородки
-  for (let j = 1; j < props.cols; j++) {
-    const x = -props.width / 2 + (j * props.width) / props.cols;
-    const dividerGeo = new THREE.BoxGeometry(shelfThickness, props.height, props.depth);
-    const dividerMat = new THREE.MeshStandardMaterial({ color: "#e0e0e0" });
-    const divider = new THREE.Mesh(dividerGeo, dividerMat);
-    divider.position.x = x;
-    group.add(divider);
-  }
-
-  shelf = group;
-  scene.add(shelf);
+import { onMounted, onUnmounted, ref, watch } from 'vue';
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+const props = defineProps<{width:number;height:number;depth:number;rows:number;cols:number;color:string}>();
+const mount = ref<HTMLDivElement|null>(null);
+const failed = ref(false);
+let scene:THREE.Scene, camera:THREE.PerspectiveCamera, renderer:THREE.WebGLRenderer, controls:OrbitControls;
+let shelf:THREE.Group|undefined, resize:ResizeObserver|undefined;
+let ready=false;
+const render=()=>{if(ready) renderer.render(scene,camera);};
+function disposeGroup(group:THREE.Object3D){
+  const materials=new Set<THREE.Material>();
+  group.traverse(object=>{if(object instanceof THREE.Mesh){object.geometry.dispose();const list=Array.isArray(object.material)?object.material:[object.material];list.forEach(m=>materials.add(m));}});
+  materials.forEach(m=>m.dispose());
 }
-
-onMounted(() => {
-  if (!mountRef.value) return;
-
-  // Сцена
-  scene = new THREE.Scene();
-  scene.background = new THREE.Color(0xf5f5f5);
-
-  // Камера
-  camera = new THREE.PerspectiveCamera(60, mountRef.value.clientWidth / mountRef.value.clientHeight, 0.1, 1000);
-  camera.position.set(2, 1.5, 3);
-  camera.lookAt(0, 0.7, 0);
-
-  // Рендерер
-  renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-  renderer.setSize(mountRef.value.clientWidth, mountRef.value.clientHeight);
-  renderer.setPixelRatio(window.devicePixelRatio);
-  mountRef.value.appendChild(renderer.domElement);
-
-  // Освещение
-  const ambientLight = new THREE.AmbientLight(0xffffff, 1.2);
-  scene.add(ambientLight);
-
-  const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
-  directionalLight.position.set(5, 5, 5);
-  scene.add(directionalLight);
-
-  // Пол
-  const floorGeometry = new THREE.PlaneGeometry(10, 10);
-  const floorMaterial = new THREE.MeshStandardMaterial({ color: 0x8b4513, roughness: 0.9 });
-  const floor = new THREE.Mesh(floorGeometry, floorMaterial);
-  floor.rotation.x = -Math.PI / 2;
-  scene.add(floor);
-
-  // Человек (упрощённый силуэт)
-  const humanGeometry = new THREE.BoxGeometry(0.4, 1.7, 0.25);
-  const humanMaterial = new THREE.MeshBasicMaterial({ color: 0x4a90e2, transparent: true, opacity: 0.4 });
-  const human = new THREE.Mesh(humanGeometry, humanMaterial);
-  human.position.set(-1.8, 0.85, 0);
-  scene.add(human);
-
-  // Функция создания шкафа
-
-  createShelf();
-
-  // Анимация
-  const animate = () => {
-    requestAnimationFrame(animate);
-    renderer.render(scene, camera);
+function buildShelf(){
+  if(!ready)return;
+  if(shelf){scene.remove(shelf);disposeGroup(shelf);}
+  shelf=new THREE.Group();
+  const {width:w,height:h,depth:d,rows,cols}=props;
+  const t=.018;
+  const mat=new THREE.MeshStandardMaterial({color:props.color,roughness:.65,metalness:0});
+  const panel=(width:number,height:number,depth:number,x:number,y:number,z:number)=>{
+    const mesh=new THREE.Mesh(new THREE.BoxGeometry(width,height,depth),mat);
+    mesh.position.set(x,y,z);mesh.castShadow=true;mesh.receiveShadow=true;shelf!.add(mesh);
   };
-  animate();
-
-  // Обработка resize
-  const handleResize = () => {
-    if (!mountRef.value) return;
-    camera.aspect = mountRef.value.clientWidth / mountRef.value.clientHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(mountRef.value.clientWidth, mountRef.value.clientHeight);
-  };
-  window.addEventListener("resize", handleResize);
-
-  // Cleanup
-  onUnmounted(() => {
-    window.removeEventListener("resize", handleResize);
-    if (mountRef.value && renderer.domElement) {
-      mountRef.value.removeChild(renderer.domElement);
-    }
-  });
+  panel(t,h,d,-w/2+t/2,h/2,0);panel(t,h,d,w/2-t/2,h/2,0);
+  panel(w-2*t,t,d,0,t/2,0);panel(w-2*t,t,d,0,h-t/2,0);
+  for(let i=1;i<rows;i++)panel(w-2*t,t,d,0,i*h/rows,0);
+  for(let j=1;j<cols;j++)panel(t,h-2*t,d,-w/2+j*w/cols,h/2,0);
+  panel(w-2*t,h-2*t,.006,0,h/2,-d/2+.003);
+  scene.add(shelf);render();
+}
+function fit(){
+  if(!ready||!mount.value)return;
+  const w=mount.value.clientWidth,h=mount.value.clientHeight;if(!w||!h)return;
+  camera.aspect=w/h;camera.updateProjectionMatrix();renderer.setSize(w,h,false);
+  const target=new THREE.Vector3(0,props.height/2,0);
+  const verticalFov=THREE.MathUtils.degToRad(camera.fov);
+  const horizontalFov=2*Math.atan(Math.tan(verticalFov/2)*camera.aspect);
+  const distance=Math.max(props.height/2/Math.tan(verticalFov/2),props.width/2/Math.tan(horizontalFov/2))*1.65+props.depth;
+  camera.position.copy(target).add(new THREE.Vector3(.9,.38,1.6).normalize().multiplyScalar(distance));
+  controls.target.copy(target);controls.minDistance=distance*.45;controls.maxDistance=distance*2.5;controls.update();render();
+}
+function snapshot(){
+  if(!ready)return false;render();
+  const a=document.createElement('a');a.download='form-shelf.png';a.href=renderer.domElement.toDataURL('image/png');a.click();return true;
+}
+defineExpose({snapshot,resetView:fit});
+onMounted(()=>{
+  if(!mount.value)return;
+  try{
+    scene=new THREE.Scene();scene.background=new THREE.Color('#eae7e0');
+    camera=new THREE.PerspectiveCamera(35,1,.05,100);
+    renderer=new THREE.WebGLRenderer({antialias:true,preserveDrawingBuffer:true});
+    renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;renderer.outputColorSpace=THREE.SRGBColorSpace;renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.2;
+    mount.value.append(renderer.domElement);
+    scene.add(new THREE.HemisphereLight('#ffffff','#d6cfc0',2.5));
+    const light=new THREE.DirectionalLight('#fff5e8',4);light.position.set(-3,5,4);light.castShadow=true;light.shadow.mapSize.set(2048,2048);light.shadow.camera.left=-4;light.shadow.camera.right=4;light.shadow.camera.top=5;light.shadow.camera.bottom=-3;light.shadow.normalBias=.025;light.shadow.bias=-.0003;scene.add(light);
+    const fill=new THREE.DirectionalLight('#f3f6ff',1);fill.position.set(4,2,-2);scene.add(fill);
+    const floor=new THREE.Mesh(new THREE.PlaneGeometry(200,200),new THREE.MeshStandardMaterial({color:'#eae7e0',roughness:1}));floor.rotation.x=-Math.PI/2;floor.position.y=-.005;floor.receiveShadow=true;scene.add(floor);
+    scene.fog=new THREE.Fog('#eae7e0',15,40);
+    controls=new OrbitControls(camera,renderer.domElement);controls.enablePan=false;controls.enableDamping=false;controls.maxPolarAngle=Math.PI/2-.03;controls.minPolarAngle=.1;controls.addEventListener('change',render);
+    ready=true;buildShelf();resize=new ResizeObserver(fit);resize.observe(mount.value);fit();
+  }catch{failed.value=true;renderer?.dispose();}
 });
-
-// Пересоздание шкафа при изменении пропсов
-watch(
-  () => [props.width, props.height, props.depth, props.rows, props.cols, props.color],
-  () => {
-    if (scene && camera && renderer) {
-      createShelf();
-    }
-  }
-);
+watch(()=>[props.width,props.height,props.depth,props.rows,props.cols,props.color],()=>{buildShelf();});
+watch(()=>[props.width,props.height,props.depth],()=>{fit();});
+onUnmounted(()=>{ready=false;resize?.disconnect();controls?.dispose();if(scene)disposeGroup(scene);renderer?.dispose();renderer?.domElement.remove();});
 </script>
-
 <style scoped>
-.scene-container {
-  width: 100vw;
-  height: 100vh; /* или min-height: 500px */
-  background: #000; /* для отладки */
-}
+.scene{height:100%;width:100%;position:relative;min-height:400px}.scene :deep(canvas){width:100%;height:100%;display:block;touch-action:none}.scene-fallback{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;text-align:center;padding:45px;gap:15px}.scene-fallback p{max-width:350px;color:#77766a;font-size:13px;line-height:1.8}@media(max-width:700px){.scene{min-height:420px}}
 </style>

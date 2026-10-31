@@ -1,63 +1,26 @@
 <template>
-  <div class="container">
-    <ClientOnly>
-      <div class="scene-wrapper">
-        <ShelfScene
-          :key="`${config.width}-${config.height}`"
-          :width="config.width"
-          :height="config.height"
-          :depth="config.depth"
-          :rows="config.rows"
-          :cols="config.cols"
-          :color="config.color"
-        />
-      </div>
-      <UIControllPanel @update:config="updateConfig" />
-    </ClientOnly>
+  <div class="app">
+    <header class="header"><a class="logo" href="/">form<span>·</span></a><span class="header-caption">Предметы, которые подстраиваются под вас.</span><a class="studio" href="https://domcraft-studio.vividloach516.chatgpt.site" target="_blank" rel="noopener">Эксперимент DomCraft ↗</a></header>
+    <main class="workspace"><section class="stage" aria-labelledby="model-title"><div class="stage-top"><div><span class="eyebrow">КОЛЛЕКЦИЯ 01 / SHELF</span><h1 id="model-title">Место для вашего.</h1><p>Соберите стеллаж под свой ритм жизни.</p></div><span class="live"><i></i> 3D в реальном времени</span></div><ClientOnly><ShelfScene ref="scene" v-bind="config"/><template #fallback><div class="loading">Готовим вашу мастерскую…</div></template></ClientOnly><div class="view-tools"><button @click="scene?.resetView()" aria-label="Вернуть исходный ракурс">↺ <span>Ракурс</span></button><button @click="saveImage">↓ <span>Снимок</span></button><button @click="share">↗ <span>Поделиться</span></button></div><div class="model-dimensions"><span>{{Math.round(config.width*100)}} <small>Ш</small> × {{Math.round(config.height*100)}} <small>В</small> × {{Math.round(config.depth*100)}} <small>Г · СМ</small></span><span>{{config.rows*config.cols}} {{cellWord}}</span></div><div class="stage-bottom"><span>↔ Перетаскивайте для вращения · Прокручивайте для приближения</span><span class="status" role="status" aria-live="polite">{{status}}</span><span>ЛДСП / 18 ММ</span></div></section><UIControllPanel v-model="config" @reset="reset" @download="download"/></main><footer class="footer"><span>FORM — цифровая мастерская мебели</span><span>Пространство начинается с идеи.</span></footer>
   </div>
 </template>
-
 <script setup lang="ts">
-import ShelfScene from "./components/ShelfScene.vue";
-import UIControllPanel from "./components/UIControllPanel.vue";
-import { ref } from "vue";
-
-defineOptions({
-  ssr: false,
-});
-
-const config = ref({
-  width: 1.075,
-  height: 1.428,
-  depth: 0.3,
-  rows: 3,
-  cols: 4,
-  color: "#ffffff",
-});
-
-function updateConfig(newConfig: any) {
-  Object.assign(config.value, newConfig);
-}
+import { ref,onMounted,computed } from 'vue';
+import ShelfScene from './components/ShelfScene.vue';
+import UIControllPanel from './components/UIControllPanel.vue';
+import type {ShelfConfig} from './types/shelf';
+useHead({htmlAttrs:{lang:'ru'},title:'FORM — интерактивный 3D-конфигуратор стеллажа',meta:[{name:'description',content:'Подберите размеры, цвет и количество полок. Вращайте 3D-модель и сохраните свою конфигурацию. Эксперимент DomCraft.'},{name:'theme-color',content:'#f4f2eb'}],link:[{rel:'icon',href:'/form.svg',type:'image/svg+xml'}]});
+const defaults:ShelfConfig={width:1.2,height:1.6,depth:.36,rows:4,cols:3,color:'#b89165'};
+const config=ref<ShelfConfig>({...defaults});const scene=ref<InstanceType<typeof ShelfScene>|null>(null);const status=ref('');
+const cellWord=computed(()=>{const n=config.value.rows*config.value.cols;return n%100>=11&&n%100<=14?'ячеек':n%10===1?'ячейка':n%10>=2&&n%10<=4?'ячейки':'ячеек';});
+const finishes=['#ede9df','#b89165','#89947c','#454945','#ae6d50'];
+function reset(){config.value={...defaults};scene.value?.resetView();status.value='Исходная конфигурация восстановлена';}
+function download(){const data={product:'FORM / Shelf',version:1,unit:'m',...config.value};const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));const link=document.createElement('a');link.href=url;link.download='form-shelf.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);status.value='Конфигурация готова к скачиванию';}
+function saveImage(){status.value=scene.value?.snapshot()?'Снимок готов к скачиванию':'3D-просмотр недоступен. Можно скачать конфигурацию.';}
+async function share(){const url=new URL(location.href);Object.entries(config.value).forEach(([key,value])=>url.searchParams.set(key,String(value)));try{await navigator.clipboard.writeText(url.toString());status.value='Ссылка на эту конфигурацию скопирована';}catch{status.value='Скопируйте ссылку из адресной строки';history.replaceState(null,'',url);}}
+onMounted(()=>{const params=new URLSearchParams(location.search);const next={...defaults};for(const key of ['width','height','depth','rows','cols'] as const){if(!params.has(key))continue;const n=Number(params.get(key));const min=key==='depth' ? 0.2 : key==='rows'||key==='cols' ? 1 : 0.5;const max=key==='depth' ? 0.6 : key==='rows'||key==='cols' ? 6 : 2.4;if(Number.isFinite(n))next[key]=Math.min(max,Math.max(min,key==='rows'||key==='cols'?Math.round(n):n));}const color=params.get('color');if(color&&finishes.includes(color))next.color=color;config.value=next;});
 </script>
-
-<style scoped>
-.container {
-  display: flex;
-  height: 100vh;
-  gap: 20px;
-  padding: 20px;
-}
-
-.scene-wrapper {
-  flex: 1;
-  background: #eee;
-  border-radius: 8px;
-  overflow: hidden;
-}
-
-@media (max-width: 768px) {
-  .container {
-    flex-direction: column;
-  }
-}
+<style>
+@font-face{font-family:Manrope;src:url('/fonts/manrope-400.ttf') format('truetype');font-weight:400;font-display:swap}@font-face{font-family:Manrope;src:url('/fonts/manrope-500.ttf') format('truetype');font-weight:500;font-display:swap}
+*{box-sizing:border-box}html,body,#__nuxt{margin:0;min-height:100%;font-family:Manrope,Arial,sans-serif;color:#343a2e;background:#f4f2eb}button,a,input{-webkit-tap-highlight-color:transparent}button{font:inherit;border:0;background:none;color:inherit;cursor:pointer}a{color:inherit;text-decoration:none}button:focus-visible,a:focus-visible{outline:2px solid #8b9a6f;outline-offset:5px}.app{max-width:1800px;margin:auto}.header{height:85px;padding:0 35px;display:flex;align-items:center;justify-content:space-between;gap:30px;border-bottom:1px solid #ddded4}.logo{font-family:Georgia,serif;font-size:39px;letter-spacing:-2px;line-height:1}.logo>span{font-family:Arial,sans-serif;font-size:20px;margin-left:3px;letter-spacing:0}.header-caption{font-size:10px;color:#979887;margin-left:20px;margin-right:auto}.studio{font-size:9px;color:#787f6b}.workspace{display:grid;grid-template-columns:minmax(0,1fr) 350px;height:calc(100dvh - 125px);min-height:500px}.stage{position:relative;min-height:0;background:#eae7e0;overflow:hidden}.stage>.scene{position:absolute;inset:0}.stage-top{position:absolute;top:28px;left:32px;right:28px;display:flex;justify-content:space-between;gap:20px;z-index:1;pointer-events:none}.eyebrow{font-size:8px;letter-spacing:.14em;color:#999987}.stage-top h1{font-size:30px;letter-spacing:-1.2px;font-weight:500;margin:14px 0 10px}.stage-top p{font-size:10px;color:#8b8b7a;margin:0}.live{display:flex;gap:6px;align-items:center;font-size:8px;align-self:flex-start;margin-top:3px;color:#888d79}.live>i{width:5px;height:5px;border-radius:50%;background:#7d8c61}.view-tools{position:absolute;z-index:2;left:26px;bottom:93px;display:flex;gap:6px}.view-tools>button{border:1px solid #d9d9cc;background:#f8f7f1d9;border-radius:30px;font-size:15px;padding:9px 13px;backdrop-filter:blur(8px);display:flex;align-items:center;gap:7px}.view-tools span{font-size:9px}.view-tools>button:hover{background:#fff}.model-dimensions{position:absolute;left:32px;right:30px;bottom:51px;display:flex;justify-content:space-between;align-items:center;font-size:13px;letter-spacing:.03em;color:#7f8470}.model-dimensions small{font-size:7px;color:#999e8c;letter-spacing:.06em}.model-dimensions>span:last-child{font-size:9px}.stage-bottom{position:absolute;left:32px;right:30px;bottom:20px;display:flex;justify-content:space-between;gap:12px;border-top:1px solid #d7d9ca;padding-top:12px;font-size:7px;color:#9a9d8a}.stage-bottom>span:last-child{white-space:nowrap}.stage-bottom .status{color:#5f6e49;font-size:8px}.loading{height:100%;display:grid;place-items:center;color:#8c907e;font-size:13px}.footer{height:40px;display:flex;align-items:center;justify-content:space-between;padding:0 35px;border-top:1px solid #ddded4;font-size:8px;color:#999d8a}@media(min-width:1400px){.workspace{grid-template-columns:minmax(0,1fr) 390px}.stage{min-height:0}.stage-top{left:42px;top:35px}.stage-top h1{font-size:38px}}@media(max-width:1050px){.workspace{grid-template-columns:minmax(0,1fr) 320px}.header-caption{display:none}.stage-top{left:24px}.stage-top h1{font-size:25px}.stage-top .live{display:none}.stage-bottom>span:first-child{display:none}.view-tools{left:20px}.model-dimensions,.stage-bottom{left:24px;right:24px}}@media(max-width:700px){.header{height:70px;padding:0 22px}.logo{font-size:34px}.studio{font-size:8px}.workspace{grid-template-columns:1fr;height:auto;min-height:0}.stage{min-height:570px}.stage>.scene{min-height:570px}.stage-top{top:25px;left:24px;right:20px}.stage-top h1{font-size:28px}.stage-top p{font-size:10px}.view-tools{bottom:91px}.model-dimensions{bottom:49px;font-size:12px}.stage-bottom{bottom:19px;font-size:7px}.stage-bottom .status{font-size:7px}.footer{padding-inline:22px;font-size:7px}.footer>span:last-child{display:none}}
 </style>
